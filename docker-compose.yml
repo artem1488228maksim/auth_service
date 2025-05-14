@@ -1,0 +1,65 @@
+name: auth
+services:
+  web:
+    # Указываем директорию ./app, в которой содержится Dockerfile для сборки образа
+    build: ./apps
+    # Запускаем встроенный сервер Django
+    command: sh -c "python manage.py migrate --noinput &&
+             python manage.py runserver 0.0.0.0:8000"
+    # Пробрасываем 8000 порт контейнера на 8000 порт локалхоста(127.0.0.1:8000)
+    ports:
+      - "127.0.0.1:8001:8000"
+    # Файл содержащий переменные окружения для контейнера
+    env_file: .env # '-' для списков
+    depends_on:
+      - db_auth
+      - cache
+
+  db_auth:
+    image: postgres:16.8
+    env_file: .env
+    environment:
+      - POSTGRES_USER=${SQL_USER}
+      - POSTGRES_PASSWORD=${SQL_PASSWORD}
+      - POSTGRES_DB=${SQL_DATABASE}
+    ports:
+      - "5434:5432"
+    volumes:
+      - auth-postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -d ${SQL_DATABASE} -U ${SQL_USER}"]
+      interval: 5s
+      timeout: 3s
+      retries: 3
+  cache:
+    image: redis:7-alpine
+    container_name: redis_container
+    ports:
+      - "6379:6379"
+    volumes:
+      - auth-redis-data:/data
+    env_file: .env
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD}
+    command: >
+      redis-server 
+      --requirepass ${REDIS_PASSWORD}
+      --appendonly yes 
+      --appendfsync everysec
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "$$REDIS_PASSWORD", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '0.50'
+          memory: 512M
+
+volumes:
+  auth-postgres-data:
+  auth-redis-data:
+
+
